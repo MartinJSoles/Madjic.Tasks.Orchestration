@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup Label="Globals">
+    <SccProjectName>SAK</SccProjectName>
+    <SccProvider>SAK</SccProvider>
+    <SccAuxPath>SAK</SccAuxPath>
+    <SccLocalPath>SAK</SccLocalPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>assembly.ico</ApplicationIcon>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <PackageIcon>Madjic.Task.Orchestration.png</PackageIcon>
+    <RepositoryType>git</RepositoryType>
+    <Title>Madjic Task Orchestration</Title>
+    <Authors>MartinJSoles</Authors>
+    <Description>Provides a mechanism to orchestrate task execution with dependencies between tasks.</Description>
+    <PackageReleaseNotes>This is an initial release of the package.</PackageReleaseNotes>
+    <IncludeSymbols>True</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="assembly.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Madjic.Task.Orchestration.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>
