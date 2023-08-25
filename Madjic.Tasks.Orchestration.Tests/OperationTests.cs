@@ -23,6 +23,48 @@ namespace Madjic.Test.Tasks.Orchestration
         }
 
         [TestMethod]
+        public async Task ExecuteAll_Parallel_WithValidInput_ShouldMarkAllOperationsAsNotExecuting()
+        {
+            // Arrange
+            const int maxParallelism = 3;
+            var operation1 = new SimpleOperation(1, "1");
+            var operation2 = new SimpleOperation(2, "2");
+            var operation3 = new SimpleOperation(3, "3");
+            var operations = new[] { operation1, operation2, operation3 };
+
+            // Act
+            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+
+            // Assert
+            Assert.IsFalse(operation1.IsExecuting, nameof(operation1));
+            Assert.IsFalse(operation2.IsExecuting, nameof(operation2));
+            Assert.IsFalse(operation3.IsExecuting, nameof(operation3));
+
+        }
+
+        [TestMethod]
+        public async Task ExecuteAll_Sequential_WithValidInput_ShouldMarkOperationsAsNotExecuting()
+        {
+            // Arrange
+            const int maxParallelism = 1;
+            var operation1 = new SimpleOperation(1, "1");
+            var operation2 = new SimpleOperation(2, "2");
+            var operation3 = new SimpleOperation(3, "3");
+            var operations = new[] { operation1, operation2, operation3 };
+
+            // Act
+            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+
+            // Assert
+            Assert.IsFalse(operation1.IsExecuting, nameof(operation1));
+            Assert.IsFalse(operation2.IsExecuting, nameof(operation2));
+            Assert.IsFalse(operation3.IsExecuting, nameof(operation3));
+
+        }
+
+
+
+        [TestMethod]
         public async Task ExecuteAll_WithNullOperationsArray_ShouldCompleteTask()
         {
             // Arrange
@@ -76,6 +118,47 @@ namespace Madjic.Test.Tasks.Orchestration
                 await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
+
+        [TestMethod]
+        public async Task ExecuteAll_Parallel_CircularDependency_ShouldThrowException()
+        {
+            // Arrange
+            const int maxParallelism = 3;
+            var operation1 = new SimpleOperation(1, "1");
+            var operation2 = new SimpleOperation(2, "2");
+            var operation3 = new SimpleOperation(3, "3");
+            operation1.AddDependency(operation2);
+            operation2.AddDependency(operation3);
+            operation3.AddDependency(operation1);
+            var operations = new[] { operation1, operation2, operation3 };
+
+            //Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
+            {
+                await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
+        [TestMethod]
+        public async Task ExecuteAll_Sequential_CircularDependency_ShouldThrowException()
+        {
+            // Arrange
+            const int maxParallelism = 1;
+            var operation1 = new SimpleOperation(1, "1");
+            var operation2 = new SimpleOperation(2, "2");
+            var operation3 = new SimpleOperation(3, "3");
+            operation1.AddDependency(operation2);
+            operation2.AddDependency(operation3);
+            operation3.AddDependency(operation1);
+            var operations = new[] { operation1, operation2, operation3 };
+
+            //Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
+            {
+                await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
 
         [TestMethod]
         public async Task ExecuteAll_WithCancelledToken_ShouldCancelOperations()

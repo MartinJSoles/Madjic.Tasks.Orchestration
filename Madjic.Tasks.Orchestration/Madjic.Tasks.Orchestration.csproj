@@ -21,10 +21,20 @@
     <PackageReleaseNotes>This is an initial release of the package.</PackageReleaseNotes>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/MartinJSoles/Madjic.Tasks.Orchestration</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/MartinJSoles/Madjic.Tasks.Orchestration</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="assembly.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

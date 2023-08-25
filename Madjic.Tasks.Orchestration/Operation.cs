@@ -13,6 +13,26 @@ namespace Madjic.Tasks.Orchestration
     [DebuggerDisplay("{Id} {Weight}")]
     public abstract class Operation
     {
+#if PREVIEW
+        /// <summary>
+        /// Creates a new instance of the <see cref="Operation"/> class.
+        /// </summary>
+        /// <param name="weight">Larger values are executed before lower weights, all other dependencies considered.</param>
+        protected Operation(int weight) : this(weight, null) { }
+
+        /// <summary>
+        /// Creates a new instance of the <see cref="Operation"/> class.
+        /// </summary>
+        /// <param name="weight">Larger values are execute before lower weights, all other dependencies considered.</param>
+        /// <param name="taskPool">A key to a task pool to use when awaiting the <see cref="ExecuteAsync(CancellationToken)"/> method invocation.</param>
+        private Operation(int weight, int? taskPool)
+        {
+            //TaskPool is reserved for a future enhancement that will allow different task pools to be used for different operations.
+            Weight = weight;
+            TaskPool = taskPool;
+            Id = Interlocked.Increment(ref nextId);
+        }
+#else
         /// <summary>
         /// Creates a new instance of the <see cref="Operation"/> class.
         /// </summary>
@@ -22,7 +42,7 @@ namespace Madjic.Tasks.Orchestration
             Weight = weight;
             Id = Interlocked.Increment(ref nextId);
         }
-
+#endif
         /// <summary>
         /// Executes the operation asynchronously.
         /// </summary>
@@ -47,6 +67,21 @@ namespace Madjic.Tasks.Orchestration
         /// </summary>
         public int Weight { get; init; }
 
+#if PREVIEW
+        /// <summary>
+        /// Gets a value indicating which task pool this operation can operate within when executed in parallel.
+        /// </summary>
+        /// <remarks>This allows multiple task pools to be used for the different operations.
+        /// <para>For instance, one pool could be allocated for database calls, another for network based IO, and a third for CPU bound work.</para></remarks>
+        protected int? TaskPool { get; init; }
+#endif
+        /// <summary>
+        /// Gets a value indicating whether this operation is currently executing or pending execution from the <see cref="ExecuteAll(int, Operation[], bool, CancellationToken?)"/> method./>
+        /// </summary>
+        public bool IsExecuting { get; private set; }
+
+        private static object syncRoot = new();
+
         private readonly List<Operation> dependentOperations = new();
         private readonly List<Operation> parents = new();
 
@@ -56,11 +91,16 @@ namespace Madjic.Tasks.Orchestration
         /// <param name="operation">The operation that must complete before this operation can begin.</param>
         public void AddDependency(Operation operation)
         {
-            if (!dependentOperations.Contains(operation))
-                dependentOperations.Add(operation);
+            lock (syncRoot)
+            {
+                if (IsExecuting)
+                    throw new InvalidOperationException("Cannot add dependencies to an operation that is executing.");
+                if (!dependentOperations.Contains(operation))
+                    dependentOperations.Add(operation);
 
-            if (!operation.parents.Contains(this))
-                operation.parents.Add(this);
+                if (!operation.parents.Contains(this))
+                    operation.parents.Add(this);
+            }
         }
 
         /// <summary>
@@ -69,8 +109,13 @@ namespace Madjic.Tasks.Orchestration
         /// <param name="operation">The operation that needs to be removed as a dependency.</param>
         public void RemoveDependency(Operation operation)
         {
-            dependentOperations.Remove(operation);
-            operation.parents.Remove(this);
+            lock (syncRoot)
+            {
+                if (IsExecuting)
+                    throw new InvalidOperationException("Cannot remove dependencies from an operation that is executing.");
+                dependentOperations.Remove(operation);
+                operation.parents.Remove(this);
+            }
         }
 
         /// <summary>
@@ -100,6 +145,7 @@ namespace Madjic.Tasks.Orchestration
             List<Operation> operationsToProcess = new();
 
             var trueRoots = operations.Where(o => !o.parents.Any() && !o.Signaled);
+            var anyNonSignaledOperations = operations.Any(o => !o.Signaled);
 
             foreach (var op in trueRoots)
             {
@@ -107,9 +153,10 @@ namespace Madjic.Tasks.Orchestration
             }
 
             if (operationsToProcess.Count == 0)
-            {
-                return Task.CompletedTask;
-            }
+                if (anyNonSignaledOperations)
+                    throw new InvalidOperationException("Cycles detected in the set of operations that have not been signaled.");
+                else
+                    return Task.CompletedTask;
 
             EnsureNoCycles(operationsToProcess);
 
@@ -122,7 +169,11 @@ namespace Madjic.Tasks.Orchestration
         private static void EnsureNoCycles(List<Operation> operations)
         {
             if (CreateTopologicalSort(operations) == null)
+            {
+                foreach (var op in operations)
+                    op.IsExecuting = false;
                 throw new InvalidOperationException("Cycles detected in the set of operations that have not been signaled.");
+            }
         }
 
         /// <summary>
@@ -131,20 +182,20 @@ namespace Madjic.Tasks.Orchestration
         private static List<int>? CreateTopologicalSort(List<Operation> operations)
         {
             // Build up the dependencies graph 
-            var dependenciesToFrom = new Dictionary<int, List<int>>(); var dependenciesFromTo = new Dictionary<int, List<int>>(); 
+            var dependenciesToFrom = new Dictionary<int, List<int>>(); var dependenciesFromTo = new Dictionary<int, List<int>>();
             foreach (var op in operations)
             {
                 // Note that op.Id depends on each of op.Dependencies 
                 dependenciesToFrom.Add(op.Id, new List<int>(op.dependentOperations.Select(o => o.Id).ToList()));
                 // Note that each of op.Dependencies is relied on by op.Id 
-                foreach (var depId in op.dependentOperations.Select(o => o.Id)) 
+                foreach (var depId in op.dependentOperations.Select(o => o.Id))
                 {
                     if (!dependenciesFromTo.TryGetValue(depId, out List<int>? ids))
                     {
                         ids = new List<int>();
                         dependenciesFromTo.Add(depId, ids);
                     }
-                    ids.Add(op.Id); 
+                    ids.Add(op.Id);
                 }
             }
 
@@ -171,14 +222,14 @@ namespace Madjic.Tasks.Orchestration
                     }
                 }
                 // If nothing was found to remove, there's no valid sort. 
-                if (thisIterationIds.Count == 0) 
+                if (thisIterationIds.Count == 0)
                     return null;
-                
+
                 // Remove the found items from the dictionary and 
                 // add them to the overall ordering 
-                foreach (var id in thisIterationIds) 
+                foreach (var id in thisIterationIds)
                     dependenciesToFrom.Remove(id);
-                
+
                 overallPartialOrderingIds.AddRange(thisIterationIds);
             }
             return overallPartialOrderingIds;
@@ -186,6 +237,8 @@ namespace Madjic.Tasks.Orchestration
 
         private static async Task ExecuteAllSequentially(List<Operation> operations, bool resetSigneledAfterDone, CancellationToken token)
         {
+            var Done = new List<Operation>();
+
             while (operations.Count > 0)
             {
                 if (token.IsCancellationRequested)
@@ -197,20 +250,29 @@ namespace Madjic.Tasks.Orchestration
                     operations.Remove(operation);
                     await operation.ExecuteAsync(token).ConfigureAwait(false);
                     operation.Signaled = true;
+                    Done.Add(operation);
                 }
                 else
                 {
+                    foreach (var op in Done)
+                        op.IsExecuting= false;
+                    foreach (var op in operations)
+                        op.IsExecuting = false;
+
                     throw new InvalidOperationException("Cycle detected");
                 }
             }
 
             if (resetSigneledAfterDone)
-                operations.ForEach(o => o.Signaled = false);
+                Done.ForEach(o => o.Signaled = false);
+            Done.ForEach(o => o.IsExecuting = false);
         }
 
         private static async Task ExecuteAllInParallel(int maxParallelism, List<Operation> operations, bool resetSigneledAfterDone, CancellationToken token)
         {
             List<Task<Operation>> tasksInProcess = new(maxParallelism);
+            var Done = new List<Operation>(operations.Count);
+
             while (operations.Count > 0)
             {
                 if (token.IsCancellationRequested)
@@ -225,6 +287,7 @@ namespace Madjic.Tasks.Orchestration
                     {
                         operations.Remove(operation);
                         candidates.Remove(operation);
+                        Done.Add(operation);
                         tasksInProcess.Add(ExecuteOperation(operation, token));
                     }
                     else
@@ -238,7 +301,8 @@ namespace Madjic.Tasks.Orchestration
                     if (done != null)
                     {
                         tasksInProcess.Remove(done);
-                        operations.Remove(await done);
+                        var d = await done;
+                        operations.Remove(d);
                     }
                 }
             }
@@ -249,7 +313,8 @@ namespace Madjic.Tasks.Orchestration
             }
 
             if (resetSigneledAfterDone)
-                operations.ForEach(o => o.Signaled = false);
+                Done.ForEach(o => o.Signaled = false);
+            Done.ForEach(o => o.IsExecuting = false);
         }
 
         private static async Task<Operation> ExecuteOperation(Operation op, CancellationToken token)
@@ -269,6 +334,7 @@ namespace Madjic.Tasks.Orchestration
 
             if (!list.Where(o => o.Id == op.Id).Any())
             {
+                op.IsExecuting = true;
                 list.Add(op);
                 foreach (var child in op.dependentOperations)
                     AddOperationToList(child, list);
