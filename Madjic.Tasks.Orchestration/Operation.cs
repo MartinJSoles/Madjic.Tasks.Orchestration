@@ -10,7 +10,7 @@ namespace Madjic.Tasks.Orchestration
     /// <summary>
     /// Provides a base class for operations that can operate in parallel while blocking on dependent operations to complete before starting.
     /// </summary>
-    [DebuggerDisplay("{Id} {Weight}")]
+    [DebuggerDisplay("Operation {Id} Weight={Weight}, TaskPool={TaskPool}")]
     public abstract class Operation
     {
 #if PREVIEW
@@ -25,11 +25,11 @@ namespace Madjic.Tasks.Orchestration
         /// </summary>
         /// <param name="weight">Larger values are execute before lower weights, all other dependencies considered.</param>
         /// <param name="taskPool">A key to a task pool to use when awaiting the <see cref="ExecuteAsync(CancellationToken)"/> method invocation.</param>
-        private Operation(int weight, int? taskPool)
+        protected Operation(int weight, TaskPool? taskPool)
         {
             //TaskPool is reserved for a future enhancement that will allow different task pools to be used for different operations.
             Weight = weight;
-            TaskPool = taskPool;
+            TaskPool = taskPool ?? TaskPool.Default;
             Id = Interlocked.Increment(ref nextId);
         }
 #else
@@ -59,7 +59,7 @@ namespace Madjic.Tasks.Orchestration
         /// <summary>
         /// A value indicating whether this operation has completed.
         /// </summary>
-        /// <remarks>Any operation that is marked as signaled is implicitly removed from <see cref="ExecuteAll(int, Operation[], bool, CancellationToken?)"/>.</remarks>
+        /// <remarks>Any operation that is marked as signaled is implicitly removed from <see cref="ExecuteAllAsync(int, Operation[], bool, CancellationToken?)"/>.</remarks>
         public bool Signaled { get; private set; }
 
         /// <summary>
@@ -73,10 +73,10 @@ namespace Madjic.Tasks.Orchestration
         /// </summary>
         /// <remarks>This allows multiple task pools to be used for the different operations.
         /// <para>For instance, one pool could be allocated for database calls, another for network based IO, and a third for CPU bound work.</para></remarks>
-        protected int? TaskPool { get; init; }
+        protected TaskPool TaskPool { get; init; }
 #endif
         /// <summary>
-        /// Gets a value indicating whether this operation is currently executing or pending execution from the <see cref="ExecuteAll(int, Operation[], bool, CancellationToken?)"/> method./>
+        /// Gets a value indicating whether this operation is currently executing or pending execution from the <see cref="ExecuteAllAsync(int, Operation[], bool, CancellationToken?)"/> method./>
         /// </summary>
         public bool IsExecuting { get; private set; }
 
@@ -118,22 +118,36 @@ namespace Madjic.Tasks.Orchestration
             }
         }
 
+#if PREVIEW
         /// <summary>
         /// Executes all operations in the provided array of trees asynchronously, blocking on dependencies.
         /// </summary>
-        /// <param name="maxParallelism">The maximum number of tasks that can be scheduled at any given time.</param>
+        /// <param name="maxParallelism">The maximum number of tasks that can be scheduled at any given time for tasks that do not have an explicit TaskPool assigned.</param>
         /// <param name="operations">The array of operations that will be executed.</param>
         /// <param name="resetSigneledAfterDone">Resets all operations to an unsignaled state after completion.</param>
         /// <param name="cancellationToken">An object that will cause any asynchronous tasks to cancel as well as the overall logic.</param>
         /// <returns></returns>
-        /// <exception cref="ArgumentOutOfRangeException"></exception>
-        public static Task ExecuteAll(int maxParallelism, Operation[] operations, bool resetSigneledAfterDone = false, CancellationToken? cancellationToken = null)
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxParallelism"/> cannot be less than 1 if there any Operations that do not have an explicitly
+        /// associated <see cref="TaskPool"/> instance.</exception>
+        /// <exception cref="InvalidOperationException">The set of operations cannot have a circular dependency.</exception>
+        /// <remarks>
+        /// <para>If an operation has an associated <see cref="TaskPool"/> object, the <see cref="TaskPool.MaxDegreeOfParallelism"/> property will
+        /// be used instead of the <paramref name="maxParallelism"/> parameter. This allows Operations to saturate separate resource pools more effectively
+        /// while honoring any dependencies between Operations regardless of the pool they are associated with.</para>
+        /// </remarks>
+#else
+/// <summary>
+/// Executes all operations in the provided array of trees asynchronously, blocking on dependencies.
+/// </summary>
+/// <param name="maxParallelism">The maximum number of tasks that can be scheduled at any given time.</param>
+/// <param name="operations">The array of operations that will be executed.</param>
+/// <param name="resetSigneledAfterDone">Resets all operations to an unsignaled state after completion.</param>
+/// <param name="cancellationToken">An object that will cause any asynchronous tasks to cancel as well as the overall logic.</param>
+/// <returns></returns>
+/// <exception cref="ArgumentOutOfRangeException"></exception>
+#endif
+        public static Task ExecuteAllAsync(int maxParallelism, Operation[] operations, bool resetSigneledAfterDone = false, CancellationToken? cancellationToken = null)
         {
-            if (maxParallelism < 1)
-            {
-                throw new ArgumentOutOfRangeException(nameof(maxParallelism), "Must be greater than 0");
-            }
-
             if (operations == null || operations.Length == 0)
             {
                 return Task.CompletedTask;
@@ -160,11 +174,31 @@ namespace Madjic.Tasks.Orchestration
 
             EnsureNoCycles(operationsToProcess);
 
+#if PREVIEW
+            var AnyNonPoolOperations = operationsToProcess.Any(o => o.TaskPool.Equals(TaskPool.Default));
+            
+            if (maxParallelism < 1)
+            {
+
+                if (AnyNonPoolOperations)
+                    throw new ArgumentOutOfRangeException(nameof(maxParallelism), "Must be greater than 0");
+            }
+
+            if (maxParallelism == 1 && !operationsToProcess.Any(o => !o.TaskPool.Equals(TaskPool.Default)))
+                return ExecuteAllSequentially(operationsToProcess, resetSigneledAfterDone, cancellationToken ?? CancellationToken.None);
+            else
+                return ExecuteAllInParallelUsingPools(maxParallelism, operationsToProcess, resetSigneledAfterDone, cancellationToken ?? CancellationToken.None);
+#else
+            if (maxParallelism < 1)
+                throw new ArgumentOutOfRangeException(nameof(maxParallelism), "Must be greater than 0");
+
             if (maxParallelism == 1)
                 return ExecuteAllSequentially(operationsToProcess, resetSigneledAfterDone, cancellationToken ?? CancellationToken.None);
             else
                 return ExecuteAllInParallel(maxParallelism, operationsToProcess, resetSigneledAfterDone, cancellationToken ?? CancellationToken.None);
+#endif
         }
+
 
         private static void EnsureNoCycles(List<Operation> operations)
         {
@@ -268,7 +302,83 @@ namespace Madjic.Tasks.Orchestration
             Done.ForEach(o => o.IsExecuting = false);
         }
 
-        private static async Task ExecuteAllInParallel(int maxParallelism, List<Operation> operations, bool resetSigneledAfterDone, CancellationToken token)
+#if PREVIEW
+        private static async Task ExecuteAllInParallelUsingPools(int maxParallelism, List<Operation> operations, bool resetSignaledAfterDone, CancellationToken token)
+        {
+            Dictionary<TaskPool,ExecutionTaskPool> pools = new();
+
+            var Done = new List<Operation>(operations.Count);
+
+            // add our distinct pools
+            var distinctPools = operations.Select(o => o.TaskPool).Distinct();
+            foreach (var pool in distinctPools)
+                pools.Add(pool, new ExecutionTaskPool(pool, pool.MaxDegreeOfParallelism > 0 ? pool.MaxDegreeOfParallelism : maxParallelism)) ;
+
+            foreach (var op in operations)
+            {
+                pools[op.TaskPool].PendingOperations.Add(op);
+            }
+
+            while (operations.Count > 0)
+            {
+                if (token.IsCancellationRequested)
+                    token.ThrowIfCancellationRequested();
+              
+                // if we have any task pool that isn't saturated, we need to find any operations that can be added to it.
+                var poolsBelowCapacity = pools.Where(p => p.Value.RunningOperations.Count < p.Value.MaxParallelism).ToList();
+
+                foreach (var pool in poolsBelowCapacity)
+                {
+                    var candidates = (from c in pool.Value.PendingOperations
+                                     where !c.Signaled && !(c.dependentOperations.Where(o => !o.Signaled).Any())
+                                     select c).Take(pool.Value.MaxParallelism - pool.Value.RunningOperations.Count).ToList();
+
+                    if (candidates.Any())
+                    {
+                        foreach (var operation in candidates)
+                        {
+                            pool.Value.PendingOperations.Remove(operation);
+                            operations.Remove(operation);
+                            Done.Add(operation);
+                            pool.Value.RunningOperations.Add(ExecuteOperation(operation, token));
+                        }
+                    }
+                }
+
+                // if we have any completed tasks, we need to remove them from the running list.
+                var composite = pools.SelectMany(p => p.Value.RunningOperations).ToList();
+
+                if (composite.Any())
+                {
+                    var completed = await Task.WhenAny(composite).ConfigureAwait(false);
+                    foreach (var pool in pools)
+                    {
+                        if (pool.Value.RunningOperations.Contains(completed))
+                        {
+                            pool.Value.RunningOperations.Remove(completed);
+                            break;
+                        }
+                    }
+
+                    await completed;
+                }
+            }
+
+            // deplete the pools of any running tasks
+            var StillRunning = pools.SelectMany(p => p.Value.RunningOperations).ToList();
+
+            if (StillRunning.Any())
+                await Task.WhenAll(StillRunning).ConfigureAwait(false);
+
+            if (resetSignaledAfterDone)
+                Done.ForEach(o => o.Signaled = false);
+            Done.ForEach(o => o.IsExecuting = false);
+
+        }
+
+#else
+
+        private static async Task ExecuteAllInParallel(int maxParallelism, List<Operation> operations, bool resetSignaledAfterDone, CancellationToken token)
         {
             List<Task<Operation>> tasksInProcess = new(maxParallelism);
             var Done = new List<Operation>(operations.Count);
@@ -312,11 +422,11 @@ namespace Madjic.Tasks.Orchestration
                 await Task.WhenAll(tasksInProcess).ConfigureAwait(false);
             }
 
-            if (resetSigneledAfterDone)
+            if (resetSignaledAfterDone)
                 Done.ForEach(o => o.Signaled = false);
             Done.ForEach(o => o.IsExecuting = false);
         }
-
+#endif
         private static async Task<Operation> ExecuteOperation(Operation op, CancellationToken token)
         {
             await op.ExecuteAsync(token).ConfigureAwait(false);

@@ -11,13 +11,14 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 3;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var OnePool = new TaskPool(2);
+            var operation1 = new SimpleOperation(1, "1", OnePool);
+            var operation2 = new SimpleOperation(2, "2", OnePool);
+            var operation3 = new SimpleOperation(3, "3", OnePool);
             var operations = new[] { operation1, operation2, operation3};
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
 
             // Assert
         }
@@ -27,13 +28,14 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 3;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var OnePool = new TaskPool(2);
+            var operation1 = new SimpleOperation(1, "1", OnePool);
+            var operation2 = new SimpleOperation(2, "2", OnePool);
+            var operation3 = new SimpleOperation(3, "3", OnePool);
             var operations = new[] { operation1, operation2, operation3 };
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
 
             // Assert
             Assert.IsFalse(operation1.IsExecuting, nameof(operation1));
@@ -47,13 +49,14 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 1;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var OnePool = new TaskPool(1);
+            var operation1 = new SimpleOperation(1, "1", OnePool);
+            var operation2 = new SimpleOperation(2, "2", OnePool);
+            var operation3 = new SimpleOperation(3, "3", OnePool);
             var operations = new[] { operation1, operation2, operation3 };
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
 
             // Assert
             Assert.IsFalse(operation1.IsExecuting, nameof(operation1));
@@ -62,8 +65,6 @@ namespace Madjic.Test.Tasks.Orchestration
 
         }
 
-
-
         [TestMethod]
         public async Task ExecuteAll_WithNullOperationsArray_ShouldCompleteTask()
         {
@@ -71,7 +72,9 @@ namespace Madjic.Test.Tasks.Orchestration
             const int maxParallelism = 3;
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, null, false, CancellationToken.None).ConfigureAwait(false);
+#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
+            await Operation.ExecuteAllAsync(maxParallelism, null, false, CancellationToken.None).ConfigureAwait(false);
+#pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
         }
 
         [TestMethod]
@@ -82,7 +85,7 @@ namespace Madjic.Test.Tasks.Orchestration
             var operations = new Operation[0];
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
         }
 
         [TestMethod]
@@ -90,13 +93,14 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 1;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var OnePool = new TaskPool(1);
+            var operation1 = new SimpleOperation(1, "1", OnePool);
+            var operation2 = new SimpleOperation(2, "2", OnePool);
+            var operation3 = new SimpleOperation(3, "3", OnePool);
             var operations = new[] { operation1, operation2, operation3};
 
             // Act
-            await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
         }
 
         [TestMethod]
@@ -104,9 +108,9 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 3;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             operation1.AddDependency(operation2);
             operation2.AddDependency(operation3);
             operation3.AddDependency(operation2);
@@ -115,7 +119,7 @@ namespace Madjic.Test.Tasks.Orchestration
             // Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
             {
-                await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+                await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
 
@@ -124,9 +128,9 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 3;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             operation1.AddDependency(operation2);
             operation2.AddDependency(operation3);
             operation3.AddDependency(operation1);
@@ -135,7 +139,7 @@ namespace Madjic.Test.Tasks.Orchestration
             //Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
             {
-                await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+                await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
 
@@ -144,9 +148,9 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 1;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             operation1.AddDependency(operation2);
             operation2.AddDependency(operation3);
             operation3.AddDependency(operation1);
@@ -155,7 +159,7 @@ namespace Madjic.Test.Tasks.Orchestration
             //Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(async () =>
             {
-                await Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+                await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
 
@@ -165,14 +169,14 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             // Arrange
             const int maxParallelism = 3;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             var operations = new[] { operation1, operation2, operation3 };
             var cancellationTokenSource = new CancellationTokenSource();
 
             // Act
-            Task executeAllTask = Operation.ExecuteAll(maxParallelism, operations, false, cancellationTokenSource.Token);
+            Task executeAllTask = Operation.ExecuteAllAsync(maxParallelism, operations, false, cancellationTokenSource.Token);
             cancellationTokenSource.Cancel();
             try { await executeAllTask; } catch { }
         }
@@ -181,44 +185,85 @@ namespace Madjic.Test.Tasks.Orchestration
         public async Task ExecuteAll_Sequentially_ShouldExecuteAllOperations()
         {
             // Arrange
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             var operations = new[] { operation1, operation2, operation3};
 
             // Act
-            await Operation.ExecuteAll(1, operations, false, CancellationToken.None).ConfigureAwait(false);
+            await Operation.ExecuteAllAsync(1, operations, false, CancellationToken.None).ConfigureAwait(false);
         }
 
         [TestMethod]
-        public void ExecuteAll_InParallel_WithMaxParallelismOfZero_ShouldThrowException()
+        public async Task ExecuteAll_InParallel_WithMaxParallelismOfZero_ShouldThrowException()
         {
             // Arrange
             const int maxParallelism = 0;
-            var operation1 = new SimpleOperation(1, "1");
-            var operation2 = new SimpleOperation(2, "2");
-            var operation3 = new SimpleOperation(3, "3");
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
             var operations = new[] { operation1, operation2, operation3};
 
+
             // Act & Assert
-            Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+            await Assert.ThrowsExceptionAsync<ArgumentOutOfRangeException>(async () =>
             {
-                Operation.ExecuteAll(maxParallelism, operations, false, CancellationToken.None);
-            });
+                await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None).ConfigureAwait(false);
+            }).ConfigureAwait(false);
+        }
+
+        [TestMethod]
+        public async Task ExecuteAll_MultiplePools_Dependencies_ShouldExecuteAllOperations()
+        {
+            // Arrange
+            const int maxParallelism = 3;
+            var OnePool = new TaskPool(2);
+            var TwoPool = new TaskPool(2);
+            var ThreePool = new TaskPool(2);
+            var operation1 = new SimpleOperation(1, "1", OnePool);
+            var operation2 = new SimpleOperation(2, "2", TwoPool);
+            var operation3 = new SimpleOperation(3, "3", ThreePool);
+            var operation4 = new SimpleOperation(4, "4", OnePool);
+            var operation5 = new SimpleOperation(5, "5", TwoPool);
+            var operation6 = new SimpleOperation(6, "6", ThreePool);
+            var operation7 = new SimpleOperation(7, "7", OnePool);
+            var operation8 = new SimpleOperation(8, "8", TwoPool);
+            var operation9 = new SimpleOperation(9, "9", ThreePool);
+
+            // create some dependencies that cross task pools
+            operation1.AddDependency(operation2);
+            operation2.AddDependency(operation3);
+            operation1.AddDependency(operation4);
+            operation2.AddDependency(operation5);
+            operation3.AddDependency(operation6);
+
+            var operations = new[] { operation1, operation2, operation3, operation4, operation5, operation6, operation7, operation8, operation9};
+
+            // Act
+            await Operation.ExecuteAllAsync(maxParallelism, operations, false, CancellationToken.None);
+
+            // Assert
+            foreach (var operation in operations)
+            {
+                Assert.IsTrue(operation.IsDone, $"Operation {operation.Name} is not done.");
+            }
         }
     }
 
     public class SimpleOperation : Operation
     {
-        public SimpleOperation(int weight, string name) : base(weight) { Name = name; }
+        public SimpleOperation(int weight, string name, TaskPool? pool) : base(weight, pool) { Name = name; }
 
         public string Name { get; set; }
+
+        public bool IsDone { get; private set; }
 
         public override async Task ExecuteAsync(CancellationToken cancellationToken)
         {
             Debug.WriteLine($"Executing {Name}...");
             await Task.Delay(100 + Weight * 100, cancellationToken);
             Debug.WriteLine($"Done executing {Name}.");
+            IsDone = true;
         }
     }
 }

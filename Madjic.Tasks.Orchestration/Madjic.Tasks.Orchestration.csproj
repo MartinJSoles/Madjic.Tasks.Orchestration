@@ -18,12 +18,26 @@
     <Title>Madjic Task Orchestration</Title>
     <Authors>MartinJSoles</Authors>
     <Description>Provides a mechanism to orchestrate task execution with dependencies between tasks.</Description>
-    <PackageReleaseNotes>This is an initial release of the package.</PackageReleaseNotes>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/MartinJSoles/Madjic.Tasks.Orchestration</PackageProjectUrl>
     <RepositoryUrl>https://github.com/MartinJSoles/Madjic.Tasks.Orchestration</RepositoryUrl>
+  </PropertyGroup>
+
+	<PropertyGroup>
+		<BuildCounter>0</BuildCounter>
+		<MajorMinorVersion>2</MajorMinorVersion>
+		<Version>$(MajorMinorVersion).0.$(BuildCounter)-rc</Version>
+		<AssemblyVersion>$(MajorMinorVersion).0.0</AssemblyVersion>
+		<FileVersion>$(MajorMinorVersion).$(BuildCounter)</FileVersion>
+		<Product>Madjic.Tasks.Orchestration</Product>
+		<Company>MartinJSoles</Company>
+		<PackageReleaseNotes />
+	</PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DefineConstants>$(DefineConstants);PREVIEW</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
