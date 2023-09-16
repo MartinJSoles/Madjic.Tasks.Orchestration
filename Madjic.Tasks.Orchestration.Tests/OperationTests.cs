@@ -1,5 +1,6 @@
 using Madjic.Tasks.Orchestration;
 using System.Diagnostics;
+using System.Threading;
 
 namespace Madjic.Test.Tasks.Orchestration
 {
@@ -248,6 +249,43 @@ namespace Madjic.Test.Tasks.Orchestration
                 Assert.IsTrue(operation.IsDone, $"Operation {operation.Name} is not done.");
             }
         }
+
+        [TestMethod]
+        public async Task ExecuteAll_ExceptionalDependentPreventsParentOperations()
+        {
+            //Arrange
+            var operation1 = new SimpleOperation(1, "1", null);
+            var operation2 = new SimpleOperation(2, "2", null);
+            var operation3 = new SimpleOperation(3, "3", null);
+            var operation4 = new SimpleOperation(4, "4", null);
+            var operation5 = new SimpleOperation(5, "5", null);
+            var operation6 = new SimpleOperation(6, "6", null);
+            var operation7 = new SimpleOperation(7, "7", null);
+            var operation8 = new SimpleOperation(8, "8", null);
+            var operation9 = new SimpleOperation(9, "THROWS", null);
+
+            operation1.AddDependency(operation9);
+            operation1.AddDependency(operation2);
+            operation3.AddDependency(operation4);
+
+            var operations = new[] { operation1, operation2, operation3, operation4, operation5, operation6, operation7, operation8, operation9 };
+            //Act
+            try
+            {
+               await  Operation.ExecuteAllAsync(5, operations, false, CancellationToken.None);
+            }
+            catch
+            {
+                Debug.WriteLine("Catching any exceptions thrown.");
+            }
+
+            //Assert
+            Assert.IsTrue(operation9.IsFaulted == true && operation9.ExecutionException != null, "Operation9 should be faulted and have an exception recorded.");
+            Assert.IsTrue(operation1.IsFaulted == true && operation1.ExecutionException == null, "Operation1 should be faulted and not have an exception since it was prevented from running due to a dependent operation failure.");
+
+            foreach (SimpleOperation op in operations)
+                Assert.IsTrue(op.Signaled, $"The operation named {op.Name} should be signaled.");
+        }
     }
 
     public class SimpleOperation : Operation
@@ -262,6 +300,10 @@ namespace Madjic.Test.Tasks.Orchestration
         {
             Debug.WriteLine($"Executing {Name}...");
             await Task.Delay(100 + Weight * 100, cancellationToken);
+
+            if (Name == "THROWS")
+                throw new Exception("This operation should throw an exception");
+
             Debug.WriteLine($"Done executing {Name}.");
             IsDone = true;
         }

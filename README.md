@@ -37,4 +37,18 @@ when cycles are detected.
 ### Version 2.0.0 Breaking Changes
 The ExecuteAll method has been renamed to ExecuteAllAsync. This is to follow the convention of naming async methods.
 
+Exception handling has changed when executing Operations. Instead of letting the raw exception bubble up and stop the
+execution method, leaving some tasks in a limbo state, the method will flag the operation as faulted (`IsFaulted` is set to `true`)
+as well as any operations that depend on it. The operation that actually threw the exception will have the
+'ExecutionException` property set to the caught error. Parent operations will not have that property set.
 
+### Want to help?
+
+I'm always looking for feedback and suggestions. If you have any, please open an issue or submit a pull request on
+[GitHub](https://github.com/MartinJSoles/Madjic.Tasks.Orchestration/issues).
+Alternatively, you reach me through nuget.org using the
+[Contact Owners](https://www.nuget.org/packages/Madjic.Tasks.Orchestration/1.0.0/ContactOwners) link on the package page. Mostly,
+I would love to know how you are using this package and if there any features you would like to see added or changed.
+I'm not able to focus much on getting the most performance out of the library at this time. For my worklife projects,
+it is more important to have valid operation and not worry much about scaling beyond a few thousand operations in a single
+run.
