@@ -46,32 +46,20 @@ namespace Madjic.Tasks.Orchestration
         public int Id { get; init; }
 
         /// <summary>
+        /// Gets the current state of this operation.
+        /// </summary>
+        public OperationState State { get; private set; }
+
+        /// <summary>
         /// A value indicating whether this operation has completed.
         /// </summary>
         /// <remarks>Any operation that is marked as signaled is implicitly removed from <see cref="ExecuteAllAsync(int, Operation[], bool, CancellationToken?)"/>.</remarks>
-        public bool Signaled { get; private set; }
+        public bool Signaled => State == OperationState.Completed || State == OperationState.Failed || State == OperationState.Skipped;
 
         /// <summary>
         /// A value indicating whether this operation has faulted due to exception or dependent operation faulting.
         /// </summary>
-        public bool IsFaulted
-        {
-            get
-            {
-                return isFaulted;
-            }
-            private set
-            {
-                isFaulted = value;
-                Signaled = Signaled | value;
-
-                if (value)
-                {
-                    foreach (Operation op in parents)
-                        op.IsFaulted = true;
-                }
-            }
-        }
+        public bool IsFaulted => State == OperationState.Failed || State == OperationState.Skipped;
 
         /// <summary>
         /// Gets the exception that caused this operation to fault, if any.
@@ -93,12 +81,21 @@ namespace Madjic.Tasks.Orchestration
         /// <summary>
         /// Gets a value indicating whether this operation is currently executing or pending execution from the <see cref="ExecuteAllAsync(int, Operation[], bool, CancellationToken?)"/> method./>
         /// </summary>
-        public bool IsExecuting { get; private set; }
+        public bool IsExecuting => State == OperationState.Running;
 
         private static object syncRoot = new();
-        private bool isFaulted;
         private readonly List<Operation> dependentOperations = new();
         private readonly List<Operation> parents = new();
+
+        /// <summary>
+        /// Gets the operations that must complete before this operation can begin.
+        /// </summary>
+        public IEnumerable<Operation> DependentOperations => dependentOperations;
+
+        /// <summary>
+        /// Gets the operations that depend on this operation to complete before they can begin.
+        /// </summary>
+        public IEnumerable<Operation> Parents => parents;
 
         /// <summary>
         /// Adds an operation that must complete before this operation can begin.
@@ -108,8 +105,9 @@ namespace Madjic.Tasks.Orchestration
         {
             lock (syncRoot)
             {
-                if (IsExecuting)
+                if (State != OperationState.NotStarted)
                     throw new InvalidOperationException("Cannot add dependencies to an operation that is executing.");
+
                 if (!dependentOperations.Contains(operation))
                     dependentOperations.Add(operation);
 
@@ -128,8 +126,11 @@ namespace Madjic.Tasks.Orchestration
             {
                 if (IsExecuting)
                     throw new InvalidOperationException("Cannot remove dependencies from an operation that is executing.");
-                dependentOperations.Remove(operation);
-                operation.parents.Remove(this);
+                if (dependentOperations.Contains(operation))
+                {
+                    dependentOperations.Remove(operation);
+                    operation.parents.Remove(this);
+                }
             }
         }
 
@@ -177,6 +178,9 @@ namespace Madjic.Tasks.Orchestration
 
             EnsureNoCycles(operationsToProcess);
 
+            foreach (var op in operationsToProcess)
+                op.State = OperationState.ReadyToRun;
+
             var AnyNonPoolOperations = operationsToProcess.Any(o => o.TaskPool.Equals(TaskPool.Default));
 
             if (maxParallelism < 1)
@@ -198,7 +202,7 @@ namespace Madjic.Tasks.Orchestration
             if (CreateTopologicalSort(operations) == null)
             {
                 foreach (var op in operations)
-                    op.IsExecuting = false;
+                    op.State = OperationState.NotStarted;
                 throw new InvalidOperationException("Cycles detected in the set of operations that have not been signaled.");
             }
         }
@@ -276,23 +280,17 @@ namespace Madjic.Tasks.Orchestration
                 {
                     operations.Remove(operation);
                     await operation.ExecuteAsync(token).ConfigureAwait(false);
-                    operation.Signaled = true;
+                    operation.State = OperationState.Completed;
                     Done.Add(operation);
                 }
                 else
                 {
-                    foreach (var op in Done)
-                        op.IsExecuting = false;
-                    foreach (var op in operations)
-                        op.IsExecuting = false;
-
                     throw new InvalidOperationException("Cycle detected");
                 }
             }
 
             if (resetSigneledAfterDone)
-                Done.ForEach(o => o.Signaled = false);
-            Done.ForEach(o => o.IsExecuting = false);
+                Done.ForEach(o => o.State = OperationState.NotStarted);
         }
 
         private static async Task ExecuteAllInParallelUsingPools(int maxParallelism, List<Operation> operations, bool resetSignaledAfterDone, CancellationToken token)
@@ -309,7 +307,7 @@ namespace Madjic.Tasks.Orchestration
             foreach (var op in operations)
             {
                 pools[op.TaskPool].PendingOperations.Add(op);
-                op.IsFaulted = false;
+                op.State = OperationState.NotStarted;
                 op.ExecutionException = null;
             }
 
@@ -377,8 +375,7 @@ namespace Madjic.Tasks.Orchestration
                 await Task.WhenAll(StillRunning).ConfigureAwait(false);
 
             if (resetSignaledAfterDone)
-                Done.ForEach(o => o.Signaled = false);
-            Done.ForEach(o => o.IsExecuting = false);
+                Done.ForEach(o => o.State = OperationState.NotStarted);
 
         }
 
@@ -387,15 +384,29 @@ namespace Madjic.Tasks.Orchestration
             try
             {
                 await op.ExecuteAsync(token).ConfigureAwait(false);
-                op.Signaled = true;
+                op.State = OperationState.Completed;
             }
             catch(Exception ex)
             {
-                op.IsFaulted = true;
+                op.State = OperationState.Failed;
                 op.ExecutionException = ex;
+
+                op.SkipParents();
             }
             
             return op;
+        }
+
+        /// <summary>
+        /// Recursively marks all parents as skipped.
+        /// </summary>
+        private void SkipParents()
+        {
+            foreach (var parent in parents)
+            {
+                parent.State = OperationState.Skipped;
+                parent.SkipParents();
+            }
         }
 
         //Recursively add the operation and all of its children to the list, if not already present, and if not signaled.
@@ -408,7 +419,7 @@ namespace Madjic.Tasks.Orchestration
 
             if (!list.Where(o => o.Id == op.Id).Any())
             {
-                op.IsExecuting = true;
+                op.State = OperationState.NotStarted;
                 list.Add(op);
                 foreach (var child in op.dependentOperations)
                     AddOperationToList(child, list);

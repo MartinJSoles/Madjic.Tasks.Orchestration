@@ -34,6 +34,28 @@ code was to generate a list of operations by only looking at operations without 
 method assumed there were no operations and returned without doing any work. Now, it will throw the same exception as
 when cycles are detected.
 
+There are new properties exposed on the Operation class: `State`, `DependentOperations`, `Parents`, `ExecutionException`,
+and `IsFaulted` (computed).
+
+The `State` property is an enum that indicates the current state of the operation.
+* `NotStarted` - The operation has not been started.
+* `ReadyToRun` - The operation is ready to run but has not been started.
+* `Running` - The operation is currently running.
+* `Completed` - The operation has completed successfully.
+* `Failed` - The operation resulted in an exception during execution.
+* `Skipped` - The operation was skipped because it was dependent on an operation that failed.
+
+The`DependentOperations` property exposes the list of operations that depend on this operation as an `IEnumerable`.
+
+The `Parents` property exposes the list of operations that this operation depends on as an `IEnumerable`.
+
+The `ExecutionException` property is set when an exception is thrown during the execution of the operation.
+
+The `IsFaulted` property is computed and is `true` if the operation or any of its dependent operations threw an exception.
+The property is calculated based on the `State` property (Failed or Skipped).
+
+The `Signaled` property has been modified to be calculated based on the `State` property (Completed, Failed, or Skipped).
+
 ### Version 2.0.0 Breaking Changes
 The ExecuteAll method has been renamed to ExecuteAllAsync. This is to follow the convention of naming async methods.
 
@@ -47,7 +69,7 @@ as well as any operations that depend on it. The operation that actually threw t
 I'm always looking for feedback and suggestions. If you have any, please open an issue or submit a pull request on
 [GitHub](https://github.com/MartinJSoles/Madjic.Tasks.Orchestration/issues).
 Alternatively, you reach me through nuget.org using the
-[Contact Owners](https://www.nuget.org/packages/Madjic.Tasks.Orchestration/1.0.0/ContactOwners) link on the package page. Mostly,
+[Contact Owners](https://www.nuget.org/packages/Madjic.Tasks.Orchestration/1.0.0/ContactOwners) link on the package page of [nuget.org](nuget.org). Mostly,
 I would love to know how you are using this package and if there any features you would like to see added or changed.
 I'm not able to focus much on getting the most performance out of the library at this time. For my worklife projects,
 it is more important to have valid operation and not worry much about scaling beyond a few thousand operations in a single
