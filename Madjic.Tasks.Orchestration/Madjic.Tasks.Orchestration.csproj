@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup Label="Globals">
     <SccProjectName>SAK</SccProjectName>
@@ -26,11 +26,11 @@
   </PropertyGroup>
 
 	<PropertyGroup>
-		<BuildCounter>0</BuildCounter>
+		<BuildCounter>1</BuildCounter>
 		<MajorMinorVersion>2</MajorMinorVersion>
-		<Version>$(MajorMinorVersion).0.$(BuildCounter)-rc</Version>
-		<AssemblyVersion>$(MajorMinorVersion).0.0</AssemblyVersion>
-		<FileVersion>$(MajorMinorVersion).$(BuildCounter)</FileVersion>
+		<Version>$(MajorMinorVersion).0.1</Version>
+		<AssemblyVersion>$(MajorMinorVersion).0.$(BuildCounter)</AssemblyVersion>
+		<FileVersion>$(MajorMinorVersion).0.$(BuildCounter)</FileVersion>
 		<Product>Madjic.Tasks.Orchestration</Product>
 		<Company>MartinJSoles</Company>
 		<PackageReleaseNotes />
